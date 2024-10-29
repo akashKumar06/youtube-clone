@@ -25,4 +25,5 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/users", userRouter);
+
 export { app };
