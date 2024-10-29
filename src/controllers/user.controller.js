@@ -60,4 +60,67 @@ async function registerUser(req, res) {
     .json(new ApiResponse(200, createdUser, "User registered successfully"));
 }
 
-export { registerUser };
+async function loginUser(req, res) {
+  // get user details
+  const { email, username, password } = req.body;
+
+  // check if the username or email exists in req.body
+  if (!username || !email)
+    throw new ApiError(400, "username or email and password is required");
+
+  const user = await User.findOne({ $or: [{ email }, { username }] });
+
+  // check if user exists in db
+  if (!user) throw new ApiError(404, "User does not exist");
+
+  // check the password
+  const isPasswordValid = await user.isPasswordCorrect(password);
+  if (!isPasswordValid) throw new ApiError(401, "Invalid user credentials");
+
+  // if user exists then generate a token and give it to the user for furthur use by the user
+  const refreshToken = user.generateRefreshToken();
+  const accessToken = user.generateAccessToken();
+  user.refreshToken = refreshToken;
+  await user.save({ validateBeforeSave: false });
+
+  const loggedInUser = await User.findById(user._id).select(
+    "-password -refreshToken"
+  );
+
+  const options = {
+    httpOnly: true,
+    secure: true,
+  };
+
+  return res
+    .status(200)
+    .cookie("accessToken", accessToken, options)
+    .cookie("refreshToken", refreshToken, options)
+    .json(
+      new ApiResponse(
+        200,
+        { user: loggedInUser, accessToken, refeshToken },
+        "User logged in successfully"
+      )
+    );
+}
+
+async function logoutUser(req, res) {
+  await User.findByIdAndUpdate(
+    req.user._id,
+    {
+      $set: { refreshToken: undefined },
+    },
+    { new: true }
+  );
+  const options = {
+    httpOnly: true,
+    secure: true,
+  };
+  return res
+    .status(200)
+    .clearCookie("accessToken", options)
+    .clearCookie("refreshToken", options)
+    .json(new ApiResponse(200, {}, "User logged out"));
+}
+export { registerUser, loginUser, logoutUser };
